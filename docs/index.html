@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="VIX 期限结构每日监测:VIX9D、VIX、VIX3M、VIX6M 的比值与历次倒挂">
+<title>VIX 期限结构监测</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#EEF2F4;--panel:#F7F9FA;--grid:#D3DCE1;--ink:#1D2B3A;--muted:#5E6E7C;--faint:#94A3AF;
+  --calm:#2F7D72;--flat:#B7791F;--stress:#C2362B;--stress-wash:rgba(194,54,43,.10);color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--paper:#16202A;--panel:#1C2833;--grid:#2A3744;--ink:#E3E9EE;--muted:#9AAAB8;--faint:#64727F;
+  --calm:#5BB3A5;--flat:#E0A64A;--stress:#E8685C;--stress-wash:rgba(232,104,92,.15);color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink)}
+body{font-family:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;font-size:16px;line-height:1.6;font-variant-numeric:tabular-nums}
+main{max-width:1000px;margin:0 auto;padding:40px 24px 64px}
+.title{font-size:15px;font-weight:600;color:var(--muted);margin:0}
+.meta{font-size:13px;color:var(--faint);margin:2px 0 0}
+.verdict-wrap{border-left:4px solid var(--grid);padding-left:18px;margin-top:26px}
+.verdict{font-size:clamp(23px,3.4vw,32px);line-height:1.4;font-weight:600;margin:0 0 10px;max-width:30em}
+.sub{color:var(--muted);margin:0;max-width:46em}
+section{margin-top:48px}
+h2{font-size:18px;font-weight:600;margin:0 0 4px}
+h3{font-size:15px;font-weight:600;margin:0}
+.hint{font-size:14px;color:var(--muted);margin:0 0 14px;max-width:46em}
+.curve-wrap{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:32px;align-items:start}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:32px}
+@media (max-width:720px){.curve-wrap,.pair{grid-template-columns:1fr}}
+.tenors{list-style:none;margin:0;padding:0}
+.tenors li{display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--grid)}
+.tn{font-weight:600}.tk{color:var(--faint);font-size:13px;margin-left:8px}
+.tv{font-weight:600}.tc{color:var(--muted);font-weight:400;font-size:13px;margin-left:10px}
+.windows{margin:0 0 10px}
+.windows button,.more{font:inherit;font-size:14px;background:none;border:1px solid var(--grid);color:var(--ink);padding:3px 12px;border-radius:999px;cursor:pointer;margin:0 6px 6px 0}
+.windows button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button:focus-visible{outline:2px solid var(--calm);outline-offset:2px}
+.chart{position:relative}
+svg text{fill:var(--muted);font-size:12px;font-family:inherit}
+svg .vl{fill:var(--ink);font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted);margin:6px 0 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.tip{position:absolute;display:none;pointer-events:none;background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:4px 10px;font-size:13px;white-space:nowrap}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:500}
+td.hi{font-weight:600;color:var(--stress)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+footer{margin-top:56px;font-size:13px;color:var(--faint);max-width:46em}
+</style>
+</head>
+<body>
+<main>
+  <p class="title">VIX 期限结构监测</p>
+  <p class="meta" id="meta">正在读取数据……</p>
+  <div class="verdict-wrap" id="verdictWrap"><p class="verdict" id="verdict"></p><p class="sub" id="sub"></p></div>
+
+  <section aria-labelledby="h-curve">
+    <h2 id="h-curve">今天的期限结构</h2>
+    <p class="hint">9 天到 6 个月的隐含波动率。常态下曲线向右上方倾斜;近端高于远端即为倒挂,说明市场在为短期的急性恐慌定价。</p>
+    <div class="curve-wrap"><div class="chart" id="curve"></div><ul class="tenors" id="tenors"></ul></div>
+  </section>
+
+  <section aria-labelledby="h-ratio">
+    <h2 id="h-ratio">VIX / VIX3M 走势</h2>
+    <p class="hint">高于 1 即倒挂,红色阴影标出倒挂的交易日。</p>
+    <div class="windows" role="group" aria-label="时间范围" id="windows"></div>
+    <div class="chart" id="ratio"></div>
+    <div class="pair">
+      <div><h3>短端:VIX9D / VIX</h3><p class="hint">对已知日期的事件(财报、选举、议息)最敏感,单独高于 1 不一定代表压力。</p><div class="chart" id="rshort"></div></div>
+      <div><h3>中段:VIX3M / VIX6M</h3><p class="hint">高于 1 说明压力已经蔓延到三个月以上的期限。</p><div class="chart" id="rmid"></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-recent">
+    <h2 id="h-recent">最近 20 个交易日</h2>
+    <div class="table-wrap"><table id="recent"></table></div>
+  </section>
+
+  <section aria-labelledby="h-ep">
+    <h2 id="h-ep">历次倒挂</h2>
+    <p class="hint" id="ep-hint"></p>
+    <div class="table-wrap"><table id="episodes"></table></div>
+    <button class="more" id="ep-more" type="button" hidden></button>
+  </section>
+
+  <footer id="foot"></footer>
+</main>
+<script>
+(() => {
+const NAMES = ['VIX9D', 'VIX', 'VIX3M', 'VIX6M'];
+const TENOR = {VIX9D: '9 天', VIX: '30 天', VIX3M: '3 个月', VIX6M: '6 个月'};
+const STATE = {inverted: {label: '倒挂', color: '--stress'}, flat: {label: '接近持平', color: '--flat'}, contango: {label: '正常', color: '--calm'}};
+const WINDOWS = [['1m', '1 个月', 21], ['3m', '3 个月', 63], ['1y', '1 年', 252], ['5y', '5 年', 1260], ['all', '全部', Infinity]];
+let D = null, rows = [], win = '1y', showAll = false;
+const $ = id => document.getElementById(id);
+const f2 = x => x == null ? '—' : x.toFixed(2);
+const f3 = x => x == null ? '—' : x.toFixed(3);
+const sign = x => (x > 0 ? '+' : x < 0 ? '−' : '±') + Math.abs(x).toFixed(2);
+const cn = s => { const [y, m, d] = s.split('-'); return `${y} 年 ${+m} 月 ${+d} 日`; };
+const md = s => { const [, m, d] = s.split('-'); return `${+m}/${+d}`; };
+const badge = st => `<span class="dot" style="background:var(${STATE[st].color})"></span>${STATE[st].label}`;
+
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), e = raw / mag;
+  const step = (e >= 7.5 ? 10 : e >= 3.5 ? 5 : e >= 1.5 ? 2 : 1) * mag, out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+}
+function xTicks(data) {
+  const N = data.length, out = [];
+  if (N <= 70) { const k = Math.max(1, Math.round(N / 6)); for (let i = 0; i < N; i += k) out.push([i, md(data[i].date)]); }
+  else if (N <= 400) { for (let i = 1; i < N; i++) if (data[i].date.slice(0, 7) !== data[i - 1].date.slice(0, 7)) { const [y, m] = data[i].date.split('-'); out.push([i, +m === 1 ? y : `${+m} 月`]); } }
+  else { for (let i = 1; i < N; i++) if (data[i].date.slice(0, 4) !== data[i - 1].date.slice(0, 4)) out.push([i, data[i].date.slice(0, 4)]); }
+  const k = Math.ceil(out.length / 8); return k > 1 ? out.filter((_, i) => i % k === 0) : out;
+}
+
+function headline() {
+  const L = D.latest, S = D.stats_1y, st = STATE[L.state], r = f3(L.r_main);
+  $('meta').textContent = `数据截至 ${cn(L.date)},每个交易日美股收盘后自动更新`;
+  $('verdictWrap').style.borderColor = `var(${st.color})`;
+  const pct = L.pct1y >= 0.999 ? '为过去一年的最高值' : `处于过去一年的 ${Math.round(L.pct1y * 100)}% 分位`;
+  let v;
+  if (L.state === 'inverted') v = `期限结构倒挂:VIX/VIX3M 为 ${r},${pct},${L.streak > 1 ? `已连续 ${L.streak} 个交易日倒挂` : '今天刚转为倒挂'}。`;
+  else if (L.state === 'flat') v = `期限结构接近持平:VIX/VIX3M 为 ${r},${pct},离倒挂只差一步。`;
+  else v = `期限结构正常:远月波动率高于近月,VIX/VIX3M 为 ${r}。`;
+  $('verdict').textContent = v;
+  const mid = L.r_mid > 1 ? `中段 VIX3M/VIX6M 为 ${f3(L.r_mid)},也已倒挂,压力蔓延到了三个月以上` : `中段 VIX3M/VIX6M 为 ${f3(L.r_mid)},尚未倒挂`;
+  $('sub').textContent = `VIX ${f2(L.levels.VIX)}(较前一交易日 ${sign(L.change.VIX)}),VIX3M ${f2(L.levels.VIX3M)}。${mid};短端 VIX9D/VIX 为 ${f3(L.r_short)}。过去一年 VIX/VIX3M 的中位数是 ${f3(S.median_1y)},共有 ${S.inverted_days_1y} 个交易日倒挂。`;
+  $('tenors').innerHTML = NAMES.map(n => `<li><span><span class="tn">${TENOR[n]}</span><span class="tk">${n}</span></span><span class="tv">${f2(L.levels[n])}<span class="tc">${sign(L.change[n])}</span></span></li>`).join('');
+}
+
+function drawCurve() {
+  const el = $('curve'), W = Math.max(el.clientWidth, 280), H = 300, m = {t: 24, r: 28, b: 40, l: 44}, C = D.latest.curve;
+  const col = `var(${STATE[D.latest.state].color})`;
+  const sets = [
+    {label: `一个月前(${md(C.month_ago_date)})`, vals: C.month_ago, style: 'stroke:var(--faint);stroke-width:1.5;stroke-dasharray:2 4'},
+    {label: `一周前(${md(C.week_ago_date)})`, vals: C.week_ago, style: 'stroke:var(--muted);stroke-width:1.5;stroke-dasharray:6 4'},
+    {label: `今天(${md(D.latest.date)})`, vals: C.today, style: `stroke:${col};stroke-width:2.5`}];
+  const all = sets.flatMap(s => s.vals); let lo = Math.min(...all), hi = Math.max(...all); const pad = (hi - lo) * 0.15 || 1; lo -= pad; hi += pad;
+  const x = i => m.l + (W - m.l - m.r) * i / 3, y = v => m.t + (H - m.t - m.b) * (1 - (v - lo) / (hi - lo));
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="今天的 VIX 期限结构曲线,与一周前、一个月前对比">`;
+  niceTicks(lo, hi, 4).forEach(t => { s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" style="stroke:var(--grid)"/><text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${t}</text>`; });
+  NAMES.forEach((n, i) => { s += `<text x="${x(i)}" y="${H - 14}" text-anchor="middle">${TENOR[n]}</text>`; });
+  sets.forEach(z => { s += `<polyline fill="none" style="${z.style}" points="${z.vals.map((v, i) => `${x(i)},${y(v)}`).join(' ')}"/>`; });
+  C.today.forEach((v, i) => { s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" style="fill:var(--paper);stroke:${col};stroke-width:2"/><text class="vl" x="${x(i)}" y="${y(v) - 10}" text-anchor="middle">${v.toFixed(2)}</text>`; });
+  s += `</svg><p class="legend">${sets.slice().reverse().map(z => `<span><svg width="26" height="8" aria-hidden="true"><line x1="0" x2="26" y1="4" y2="4" style="${z.style}"/></svg>${z.label}</span>`).join('')}</p>`;
+  el.innerHTML = s;
+}
+
+function drawLine(el, key, H) {
+  const n = WINDOWS.find(w => w[0] === win)[2], data = rows.slice(-Math.min(n, rows.length)).filter(p => p[key] != null);
+  const W = Math.max(el.clientWidth, 260), m = {t: 10, r: 12, b: 28, l: 44}, N = data.length, vals = data.map(p => p[key]);
+  let lo = Math.min(...vals, 1), hi = Math.max(...vals, 1); const pad = (hi - lo) * 0.08 || 0.02; lo -= pad; hi += pad;
+  const step = (W - m.l - m.r) / Math.max(N - 1, 1), x = i => m.l + step * i, y = v => m.t + (H - m.t - m.b) * (1 - (v - lo) / (hi - lo));
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${key} 走势">`;
+  for (let i = 0; i < N;) {
+    if (vals[i] > 1) { let j = i; while (j + 1 < N && vals[j + 1] > 1) j++;
+      const x0 = Math.max(m.l, x(i) - step / 2), x1 = Math.min(W - m.r, x(j) + step / 2);
+      s += `<rect x="${x0}" y="${m.t}" width="${Math.max(x1 - x0, 1.5)}" height="${H - m.t - m.b}" style="fill:var(--stress-wash)"/>`; i = j + 1;
+    } else i++;
+  }
+  niceTicks(lo, hi, H > 200 ? 4 : 3).forEach(t => { s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" style="stroke:var(--grid)"/><text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${t}</text>`; });
+  s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(1)}" y2="${y(1)}" style="stroke:var(--stress);stroke-dasharray:4 3"/>`;
+  xTicks(data).forEach(([i, lab]) => { s += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${lab}</text>`; });
+  s += `<polyline fill="none" style="stroke:var(--ink);stroke-width:1.6" points="${vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}"/>`;
+  s += `<line class="cur" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" style="stroke:var(--muted);display:none"/><circle class="cdot" r="3.5" style="fill:var(--ink);display:none"/>`;
+  s += `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" style="fill:transparent"/></svg><div class="tip"></div>`;
+  el.innerHTML = s;
+  const svg = el.querySelector('svg'), tip = el.querySelector('.tip'), cur = svg.querySelector('.cur'), dot = svg.querySelector('.cdot');
+  const move = ev => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width;
+    const k = Math.min(N - 1, Math.max(0, Math.round((px - m.l) / step))), p = data[k];
+    cur.setAttribute('x1', x(k)); cur.setAttribute('x2', x(k)); cur.style.display = '';
+    dot.setAttribute('cx', x(k)); dot.setAttribute('cy', y(p[key])); dot.style.display = '';
+    tip.style.display = 'block'; tip.textContent = `${p.date}:${f3(p[key])}`;
+    tip.style.left = Math.max(0, Math.min(x(k) * r.width / W + 12, r.width - tip.offsetWidth - 4)) + 'px'; tip.style.top = '2px';
+  };
+  svg.addEventListener('mousemove', move);
+  svg.addEventListener('touchmove', e => move(e.touches[0]), {passive: true});
+  svg.addEventListener('mouseleave', () => { cur.style.display = 'none'; dot.style.display = 'none'; tip.style.display = 'none'; });
+}
+
+function drawCharts() { drawLine($('ratio'), 'r_main', 280); drawLine($('rshort'), 'r_short', 170); drawLine($('rmid'), 'r_mid', 170); }
+
+function tables() {
+  $('recent').innerHTML = '<thead><tr><th>日期</th><th>VIX9D</th><th>VIX</th><th>VIX3M</th><th>VIX6M</th><th>VIX/VIX3M</th><th>VIX9D/VIX</th><th>VIX3M/VIX6M</th><th>一年分位</th><th>状态</th></tr></thead><tbody>'
+    + rows.slice(-20).reverse().map(p => `<tr><td>${p.date}</td><td>${f2(p.VIX9D)}</td><td>${f2(p.VIX)}</td><td>${f2(p.VIX3M)}</td><td>${f2(p.VIX6M)}</td>`
+      + `<td class="${p.r_main > 1 ? 'hi' : ''}">${f3(p.r_main)}</td><td>${f3(p.r_short)}</td><td class="${p.r_mid > 1 ? 'hi' : ''}">${f3(p.r_mid)}</td>`
+      + `<td>${p.pct1y == null ? '—' : Math.round(p.pct1y * 100) + '%'}</td><td>${badge(p.state)}</td></tr>`).join('') + '</tbody>';
+  const E = D.episodes, list = showAll ? E : E.slice(0, 12);
+  $('ep-hint').textContent = `2011 年以来,VIX/VIX3M 共出现 ${E.length} 段倒挂,按时间倒序排列。`;
+  $('episodes').innerHTML = '<thead><tr><th>开始</th><th>结束</th><th>交易日数</th><th>峰值</th><th>峰值日期</th><th>峰值当天 VIX</th></tr></thead><tbody>'
+    + list.map(e => `<tr><td>${e.start}</td><td>${e.ongoing ? '仍在倒挂' : e.end}</td><td>${e.days}</td><td>${f3(e.peak)}</td><td>${e.peak_date}</td><td>${f2(e.peak_vix)}</td></tr>`).join('') + '</tbody>';
+  const b = $('ep-more'); b.hidden = E.length <= 12; b.textContent = showAll ? '只看最近 12 段' : `显示全部 ${E.length} 段`;
+}
+
+function init() {
+  headline();
+  $('windows').innerHTML = WINDOWS.map(([k, lab]) => `<button type="button" data-w="${k}" aria-pressed="${k === win}">${lab}</button>`).join('');
+  $('windows').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; win = b.dataset.w;
+    $('windows').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.dataset.w === win)); drawCharts(); });
+  $('ep-more').addEventListener('click', () => { showAll = !showAll; tables(); });
+  drawCurve(); drawCharts(); tables();
+  const src = Object.values(D.sources).every(s => s === 'from_cboe') ? 'Cboe 官网' : 'Cboe 官网与 Yahoo Finance';
+  $('foot').textContent = `数据来自${src}公布的 VIX9D、VIX、VIX3M、VIX6M 日收盘价。本页仅用于市场监测,不构成投资建议。数据最后更新于 ${D.updated_at}(UTC)。`;
+  let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { drawCurve(); drawCharts(); }, 150); });
+}
+
+fetch('data/vix_term.json', {cache: 'no-store'})
+  .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(data => { D = data; rows = D.series.map(a => Object.fromEntries(D.columns.map((c, i) => [c, a[i]]))); init(); })
+  .catch(err => { $('meta').textContent = ''; $('verdict').textContent = '还没有数据';
+    $('sub').textContent = `没有读到 data/vix_term.json(${err.message})。在项目根目录运行 python3 scripts/update_vix.py 生成数据后刷新本页。`; });
+})();
+</script>
+</body>
+</html>
