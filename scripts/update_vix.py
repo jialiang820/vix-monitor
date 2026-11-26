@@ -31,16 +31,15 @@ def from_yf(name):
 
 def load(name):
     got = []
-    for f in (from_cboe, from_yf):
+    for f in (from_cboe, from_yf):                     # 两个数据源都取,各指数用日期最新的一份
         try:
             s = f(name)
             if len(s) > 250: got.append((s, f.__name__))
         except Exception as e:
             print(f'[警告] {name} 通过 {f.__name__} 获取失败:{e}', file=sys.stderr)
-        if got and (pd.Timestamp.today().normalize() - got[-1][0].index[-1]).days <= 4:
-            break                                      # 已经足够新,不必再试下一个数据源
     if not got: sys.exit(f'[错误] {name} 两个数据源都获取失败')
-    return max(got, key=lambda t: t[0].index[-1])
+    print(f"{name}:" + ",".join(f"{src} 至 {x.index[-1].date()}" for x, src in got))
+    return max(got, key=lambda t: (t[0].index[-1], t[1] == 'from_cboe'))
 
 def main():
     S, SRC = {}, {}
